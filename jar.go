@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"golang.org/x/net/publicsuffix"
-	"gopkg.in/errgo.v1"
 )
 
 // PublicSuffixList provides the public suffix of a domain. For example:
@@ -66,18 +65,18 @@ type Options struct {
 
 	// Filename holds the file to use for storage of the cookies.
 	// If it is empty, the value of DefaultCookieFile will be used.
-	Filename string
+	//Filename string
 
 	// NoPersist specifies whether no persistence should be used
 	// (useful for tests). If this is true, the value of Filename will be
 	// ignored.
-	NoPersist bool
+	//NoPersist bool
 }
 
 // Jar implements the http.CookieJar interface from the net/http package.
 type Jar struct {
 	// filename holds the file that the cookies were loaded from.
-	filename string
+	//filename string
 
 	psList PublicSuffixList
 
@@ -110,14 +109,6 @@ func newAtTime(o *Options, now time.Time) (*Jar, error) {
 	}
 	if jar.psList = o.PublicSuffixList; jar.psList == nil {
 		jar.psList = publicsuffix.List
-	}
-	if !o.NoPersist {
-		if jar.filename = o.Filename; jar.filename == "" {
-			jar.filename = DefaultCookieFile()
-		}
-		if err := jar.load(); err != nil {
-			return nil, errgo.Notef(err, "cannot load cookies")
-		}
 	}
 	jar.deleteExpired(now)
 	return jar, nil

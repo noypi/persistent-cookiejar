@@ -7,6 +7,7 @@ package cookiejar
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -53,11 +54,19 @@ func (emptyPSL) PublicSuffix(d string) string {
 func newTestJar(path string) *Jar {
 	jar, err := New(&Options{
 		PublicSuffixList: testPSL{},
-		Filename:         path,
-		NoPersist:        path == "",
+		//Filename:         path,
+		//NoPersist: path == "",
 	})
 	if err != nil {
 		panic(err)
+	}
+	f, err := os.Open(path)
+	if nil != err {
+		log.Fatal(err)
+	}
+	defer f.Close()
+	if err = jar.Load(f); nil != err {
+		log.Fatal(err)
 	}
 	return jar
 }
@@ -1364,13 +1373,27 @@ func TestSaveMerge(t *testing.T) {
 		for _, sc := range test.setCookies1 {
 			sc.set(jar1)
 		}
-		err := jar1.save(test.now)
-		if err != nil {
-			t.Fatalf("Test %q; cannot save first jar: %v", test.description, err)
+		{
+			f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.ModePerm)
+			if err != nil {
+				t.Fatalf("Test %q; cannot open path=%s", test.description, path)
+			}
+			defer f.Close()
+			err = jar1.SaveTo(nil, f)
+			if err != nil {
+				t.Fatalf("Test %q; cannot save first jar: %v", test.description, err)
+			}
 		}
-		err = jar0.save(test.now)
-		if err != nil {
-			t.Fatalf("Test %q; cannot save: %v", test.description, err)
+		{
+			f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.ModePerm)
+			if err != nil {
+				t.Fatalf("Test %q; cannot open path=%s", test.description, path)
+			}
+			defer f.Close()
+			err = jar0.SaveTo(nil, f)
+			if err != nil {
+				t.Fatalf("Test %q; cannot save: %v", test.description, err)
+			}
 		}
 		got := allCookies(jar0, test.now)
 
@@ -1404,7 +1427,7 @@ func TestMergeConcurrent(t *testing.T) {
 	merger := func(j *Jar) {
 		defer wg.Done()
 		for i := 0; i < N; i++ {
-			j.Save()
+			j.SaveTo(nil, f)
 		}
 	}
 	getter := func(j *Jar) {
@@ -1501,7 +1524,10 @@ func TestLoadSave(t *testing.T) {
 	file := filepath.Join(d, "cookies")
 	j := newTestJar(file)
 	j.SetCookies(serializeTestURL, serializeTestCookies)
-	if err := j.Save(); err != nil {
+
+	f, _ := os.OpenFile(file, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.ModePerm)
+	defer f.Close()
+	if err := j.SaveTo(nil, f); err != nil {
 		t.Fatalf("cannot save: %v", err)
 	}
 	if _, err := os.Stat(file); err != nil {
@@ -1524,17 +1550,22 @@ func TestLoadSaveWithNoPersist(t *testing.T) {
 	file := filepath.Join(d, "cookies")
 	j := newTestJar(file)
 	j.SetCookies(serializeTestURL, serializeTestCookies)
-	if err := j.Save(); err != nil {
+
+	f, _ := os.OpenFile(file, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.ModePerm)
+	defer f.Close()
+	if err := j.SaveTo(nil, f); err != nil {
 		t.Fatalf("cannot save: %v", err)
 	}
 	jar, err := New(&Options{
 		PublicSuffixList: testPSL{},
-		Filename:         file,
-		NoPersist:        true,
+		//Filename:         file,
+		//NoPersist:        true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	f.Seek(0, 0)
+	err = jar.Load(f)
 
 	if got := allCookiesIncludingExpired(jar, tNow); got != "" {
 		t.Errorf("Cookies unexpectedly loaded: %v", got)
@@ -1544,7 +1575,8 @@ func TestLoadSaveWithNoPersist(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := jar.Save(); err != nil {
+	f.Seek(0, 0)
+	if err := jar.SaveTo(nil, f); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(file); err == nil {
@@ -1552,6 +1584,7 @@ func TestLoadSaveWithNoPersist(t *testing.T) {
 	}
 }
 
+/*
 func TestLoadNonExistentParent(t *testing.T) {
 	d, err := ioutil.TempDir("", "")
 	if err != nil {
@@ -1560,14 +1593,15 @@ func TestLoadNonExistentParent(t *testing.T) {
 	defer os.RemoveAll(d)
 	file := filepath.Join(d, "foo", "cookies")
 	_, err = New(&Options{
-		PublicSuffixList: testPSL{},
-		Filename:         file,
+	//PublicSuffixList: testPSL{},
+	//Filename:         file,
 	})
 	if err != nil {
 		t.Fatalf("cannot make cookie jar: %v", err)
 	}
 }
-
+*/
+/*
 func TestLoadNonExistentParentOfParent(t *testing.T) {
 	d, err := ioutil.TempDir("", "")
 	if err != nil {
@@ -1582,7 +1616,7 @@ func TestLoadNonExistentParentOfParent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot make cookie jar: %v", err)
 	}
-}
+}*/
 
 func TestLoadOldFormat(t *testing.T) {
 	// Check that loading the old format (a JSON object)
@@ -1593,10 +1627,12 @@ func TestLoadOldFormat(t *testing.T) {
 	}
 	defer os.Remove(f.Name())
 	f.Write([]byte("{}"))
-	f.Close()
+	defer f.Close()
 	jar, err := New(&Options{
-		Filename: f.Name(),
+	//Filename: f.Name(),
 	})
+	f.Seek(0, 0)
+	err = jar.Load(f)
 	if err != nil {
 		t.Errorf("got error: %v", err)
 	}
@@ -1612,10 +1648,12 @@ func TestLoadInvalidJSON(t *testing.T) {
 	}
 	defer os.Remove(f.Name())
 	f.Write([]byte("["))
-	f.Close()
+	defer f.Close()
 	jar, err := New(&Options{
-		Filename: f.Name(),
+	//Filename: f.Name(),
 	})
+	f.Seek(0, 0)
+	err = jar.Load(f)
 	if err == nil {
 		t.Fatalf("expected error, got none")
 	}
@@ -1639,9 +1677,11 @@ func TestLoadDifferentPublicSuffixList(t *testing.T) {
 	// With no public suffix list, some domains that should be
 	// separate can set cookies for each other.
 	jar, err := newAtTime(&Options{
-		Filename:         f.Name(),
+		//Filename:         f.Name(),
 		PublicSuffixList: emptyPSL{},
 	}, now)
+	f.Seek(0, 0)
+	err = jar.Load(f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1659,14 +1699,18 @@ func TestLoadDifferentPublicSuffixList(t *testing.T) {
 		{"http://bar.co.uk/", "a=a b=b"},
 	}
 	testQueries(t, queries, "no public suffix list", jar, now)
-	if err := jar.save(now); err != nil {
+
+	f.Seek(0, 0)
+	if err := jar.SaveTo(nil, f); err != nil {
 		t.Fatalf("cannot save jar: %v", err)
 	}
 
 	jar, err = newAtTime(&Options{
-		Filename:         f.Name(),
+		//Filename:         f.Name(),
 		PublicSuffixList: testPSL{},
 	}, now)
+	f.Seek(0, 0)
+	err = jar.Load(f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1675,16 +1719,21 @@ func TestLoadDifferentPublicSuffixList(t *testing.T) {
 		{"http://bar.co.uk/", "b=b"},
 	}
 	testQueries(t, queries, "with test public suffix list", jar, now)
-	if err := jar.save(now); err != nil {
+
+	f.Seek(0, 0)
+	if err := jar.SaveTo(nil, f); err != nil {
 		t.Fatalf("cannot save jar: %v", err)
 	}
 
 	// When we reload with the original (empty) public suffix
 	// we get all the original cookies back.
 	jar, err = newAtTime(&Options{
-		Filename:         f.Name(),
+		//Filename:         f.Name(),
 		PublicSuffixList: emptyPSL{},
 	}, now)
+
+	f.Seek(0, 0)
+	err = jar.Load(f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1693,7 +1742,9 @@ func TestLoadDifferentPublicSuffixList(t *testing.T) {
 		{"http://bar.co.uk/", "a=a b=b"},
 	}
 	testQueries(t, queries, "no public suffix list #2", jar, now)
-	if err := jar.save(now); err != nil {
+
+	f.Seek(0, 0)
+	if err := jar.SaveTo(nil, f); err != nil {
 		t.Fatalf("cannot save jar: %v", err)
 	}
 }

@@ -8,8 +8,6 @@ import (
 	"encoding/json"
 	"io"
 	"log"
-	"os"
-	"path/filepath"
 	"sort"
 	"time"
 
@@ -19,20 +17,18 @@ import (
 	"gopkg.in/errgo.v1"
 )
 
+/*
 // Save saves the cookies to the persistent cookie file.
 // Before the file is written, it reads any cookies that
 // have been stored from it and merges them into j.
-func (j *Jar) Save() error {
-	if j.filename == "" {
-		return nil
-	}
-	return j.save(time.Now())
-}
+func (j *Jar) Save(w io.ReadWriteCloser) error {
+	return j.save(w, time.Now())
+}*/
 
 func (j *Jar) SaveTo(r io.Reader, w io.Writer) error {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	if r != nil{
+	if r != nil {
 		if err := j.mergeFrom(r); err != nil {
 			// The cookie file is probably corrupt.
 			log.Printf("cannot read cookie file to merge it; ignoring it: %v", err)
@@ -42,19 +38,9 @@ func (j *Jar) SaveTo(r io.Reader, w io.Writer) error {
 	return j.writeTo(w)
 }
 
-
-
+/*
 // save is like Save but takes the current time as a parameter.
-func (j *Jar) save(now time.Time) error {
-	locked, err := lockFile(lockFileName(j.filename))
-	if err != nil {
-		return errgo.Mask(err)
-	}
-	defer locked.Close()
-	f, err := os.OpenFile(j.filename, os.O_RDWR|os.O_CREATE, 0600)
-	if err != nil {
-		return errgo.Mask(err)
-	}
+func (j *Jar) save(f io.ReadWriteCloser, now time.Time) error {
 	defer f.Close()
 	// TODO optimization: if the file hasn't changed since we
 	// loaded it, don't bother with the merge step.
@@ -73,29 +59,11 @@ func (j *Jar) save(now time.Time) error {
 		return errgo.Mask(err)
 	}
 	return j.writeTo(f)
-}
+}*/
 
 // load loads the cookies from j.filename. If the file does not exist,
 // no error will be returned and no cookies will be loaded.
-func (j *Jar) load() error {
-	if _, err := os.Stat(filepath.Dir(j.filename)); os.IsNotExist(err) {
-		// The directory that we'll store the cookie jar
-		// in doesn't exist, so don't bother trying
-		// to acquire the lock.
-		return nil
-	}
-	locked, err := lockFile(lockFileName(j.filename))
-	if err != nil {
-		return errgo.Mask(err)
-	}
-	defer locked.Close()
-	f, err := os.Open(j.filename)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
+func (j *Jar) Load(f io.ReadCloser) error {
 	defer f.Close()
 	if err := j.mergeFrom(f); err != nil {
 		return errgo.Mask(err)
